@@ -1,58 +1,138 @@
+#include <gio/gio.h>
+
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <dbus/dbus.h>
-#include <dbus/dbus-glib-lowlevel.h> /* for glib main loop */
+
+#define SERVICE_NAME "org.example.LeapServer"
+#define OBJECT_PATH "/org/example/LeapServer"
 
 
-const char *version = "0.1";
-GMainLoop *mainloop;
+static GDBusNodeInfo *introspectionData = NULL;
 
-/*const DBusObjectPathVTable server_vtable = {
-	.message_function = server_message_handler
-};*/
+/* Introspection data for the service we are exporting */
+static const gchar introspectionXML[] =
+  "<node>"
+  "  <interface name='org.example.LeapServer'>"
+  "    <!--<annotation name='org.example.LeapServer.Annotation' value='OnInterface'/>"
+  "    <annotation name='org.example.LeapServer.Annotation' value='AlsoOnInterface'/>-->"
+  "    <method name='HelloWorld'>"
+  "      <annotation name='org.example.LeapServer.Annotation' value='OnMethod'/>"
+  "      <arg type='s' name='greeting' direction='in'/>"
+  "      <arg type='s' name='response' direction='out'/>"
+  "    </method>"
+  "    <!--<method name='EmitSignal'>"
+  "      <arg type='d' name='speed_in_mph' direction='in'>"
+  "        <annotation name='org.example.LeapServer.Annotation' value='OnArg'/>"
+  "      </arg>"
+  "    </method>-->"
+  "    <!--<method name='GimmeStdout'/>-->"
+  "    <!--<signal name='VelocityChanged'>"
+  "      <annotation name='org.example.LeapServer.Annotation' value='Onsignal'/>"
+  "      <arg type='d' name='speed_in_mph'/>"
+  "      <arg type='s' name='speed_as_string'>"
+  "        <annotation name='org.example.LeapServer.Annotation' value='OnArg_NonFirst'/>"
+  "      </arg>"
+  "    </signal>-->"
+  "    <!--<property type='s' name='FluxCapicitorName' access='read'>"
+  "      <annotation name='org.example.LeapServer.Annotation' value='OnProperty'>"
+  "        <annotation name='org.example.LeapServer.Annotation' value='OnAnnotation_YesThisIsCrazy'/>"
+  "      </annotation>"
+  "    </property>"
+  "    <property type='s' name='Title' access='readwrite'/>"
+  "    <property type='s' name='ReadingAlwaysThrowsError' access='read'/>"
+  "    <property type='s' name='WritingAlwaysThrowsError' access='readwrite'/>"
+  "    <property type='s' name='OnlyWritable' access='write'/>"
+  "    <property type='s' name='Foo' access='read'/>"
+  "    <property type='s' name='Bar' access='read'/>-->"
+  "  </interface>"
+  "</node>";
+
+/* --------------------------------------------------------------------------------------- */
+
+static void handleMethodCall (GDBusConnection       *connection,
+								const gchar           *sender,
+								const gchar           *objectPath,
+								const gchar           *interfaceName,
+								const gchar           *methodName,
+								GVariant              *parameters,
+								GDBusMethodInvocation *invocation,
+								gpointer               userData) 
+{
+
+	if (g_strcmp0 (methodName, "HelloWorld") == 0) {
+		const gchar *greeting;
+
+		g_variant_get (parameters, "(&s)", &greeting);
+
+		if (g_strcmp0 (greeting, "Return Unregistered") == 0) {
+			g_dbus_method_invocation_return_error (invocation, G_IO_ERROR, G_IO_ERROR_FAILED_HANDLED, 
+						   	"As requested, here's a GError not registered (G_IO_ERROR_FAILED_HANDLED)");
+		}
+		else if (g_strcmp0 (greeting, "Return Registered") == 0) {
+			g_dbus_method_invocation_return_error (invocation, G_DBUS_ERROR, G_DBUS_ERROR_MATCH_RULE_NOT_FOUND,
+         					"As requested, here's a GError that is registered (G_DBUS_ERROR_MATCH_RULE_NOT_FOUND)");
+		}
+		else if (g_strcmp0 (greeting, "Return Raw") == 0) {
+			g_dbus_method_invocation_return_dbus_error (invocation,
+		                                      "org.example.LeapServer.SomeErrorName",
+		                                      "As requested, here's a raw D-Bus error");
+		}
+		else {
+			gchar *response;
+			response = g_strdup_printf ("You greeted me with '%s'. Thanks!", greeting);
+			g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", response));
+			g_free (response);
+		}
+	}
+}
+
+static const GDBusInterfaceVTable interfaceVTable = {
+	handleMethodCall
+	/*handle_get_property,
+	handle_set_property*/
+};
+
+static void onBusAcquired(GDBusConnection *connection, const gchar *name, gpointer user_data) {
+	printf("Session Bus acquired\n");
+	guint registrationId;
+
+	registrationId = g_dbus_connection_register_object (connection,
+	                                                   OBJECT_PATH,
+	                                                   introspectionData->interfaces[0],
+	                                                   &interfaceVTable,
+	                                                   NULL,  /* user_data */
+	                                                   NULL,  /* user_data_free_func */
+	                                                   NULL); /* GError** */
+	
+	g_assert (registrationId > 0);
+}
+
+static void onNameAcquired() {
+	printf("Name acquired\n");
+}
+
+static void onNameLost() {
+	exit(1);
+}
 
 int main(void) {
-	DBusConnection *conn;
-	DBusError err;
-	int rv;
+	
+	guint busId;
+	GMainLoop *loop;
 
-	dbus_error_init(&err);
+	introspectionData = g_dbus_node_info_new_for_xml (introspectionXML, NULL);
+	g_assert (introspectionData != NULL);
 
-	/* connect to the daemon bus */
-	conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
-	if (!conn) {
-		fprintf(stderr, "Failed to get a session DBus connection: %s\n", err.message);
-		dbus_error_free(&err);
-		return EXIT_FAILURE;
-	}
+	busId = g_bus_own_name(G_BUS_TYPE_SESSION, SERVICE_NAME, G_BUS_NAME_OWNER_FLAGS_NONE, onBusAcquired, onNameAcquired, onNameLost, NULL, NULL);
+	
+	loop = g_main_loop_new(NULL, false);
 
-	/*asks the bus to assign the given name to this connection */
-	rv = dbus_bus_request_name(conn, "org.example.LeapServer", DBUS_NAME_FLAG_REPLACE_EXISTING , &err);
-	if (rv != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER) {
-		fprintf(stderr, "Failed to request name on bus: %s\n", err.message);
-		dbus_error_free(&err);
-		return EXIT_FAILURE;
-	}
+	g_main_loop_run(loop);
 
-	/*if (!dbus_connection_register_object_path(conn, "/org/example/TestObject", &server_vtable, NULL)) {
-		fprintf(stderr, "Failed to register a object path for 'TestObject'\n");
-		goto fail;
-	}*/
-
-	/*
-	 * For the sake of simplicity we're using glib event loop to
-	 * handle DBus messages. This is the only place where glib is
-	 * used.
-	 */
-	printf("Starting dbus tiny server v%s\n", version);
-	mainloop = g_main_loop_new(NULL, false);
-	/* Set up the DBus connection to work in a GLib event loop */
-	dbus_connection_setup_with_g_main(conn, NULL);
-	/* Start the glib event loop */
-	g_main_loop_run(mainloop);
+	g_bus_unown_name(busId);
 
 	return EXIT_SUCCESS;
 
