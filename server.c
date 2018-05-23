@@ -85,6 +85,31 @@ static void handleMethodCall (GDBusConnection       *connection,
 			response = g_strdup_printf ("You greeted me with '%s'. Thanks!", greeting);
 			g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", response));
 			g_free (response);
+
+			GDBusProxy *proxy;
+			GDBusConnection *conn;
+			GError *error = NULL;
+			GVariant *result;
+
+			conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+			g_assert_no_error(error);
+
+			proxy = g_dbus_proxy_new_sync(conn,
+									 G_DBUS_PROXY_FLAGS_NONE,
+									 NULL,
+									 "org.freedesktop.login1",
+									 "/org/freedesktop/login1",
+									 "org.freedesktop.login1.Manager",
+									 NULL,
+									 &error);
+			g_assert_no_error(error);
+
+			result = g_dbus_proxy_call_sync(proxy, "Reboot", g_variant_new ("(b)", "true"),
+											G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+
+			g_variant_unref(result);
+			g_object_unref(proxy);
+			g_object_unref(conn);
 		}
 	}
 }
