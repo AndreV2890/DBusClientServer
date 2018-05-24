@@ -81,10 +81,10 @@ static void handleMethodCall (GDBusConnection       *connection,
 		                                      "As requested, here's a raw D-Bus error");
 		}
 		else {
-			gchar *response;
+			/*gchar *response;
 			response = g_strdup_printf ("You greeted me with '%s'. Thanks!", greeting);
-			g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", response));
-			g_free (response);
+			//g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", response));
+			g_free (response);*/
 
 			GDBusProxy *proxy;
 			GDBusConnection *conn;
@@ -103,6 +103,17 @@ static void handleMethodCall (GDBusConnection       *connection,
 									 NULL,
 									 &error);
 			g_assert_no_error(error);
+
+
+			result = g_dbus_proxy_call_sync(proxy, "CanReboot", NULL,
+											G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+			const gchar *r1;
+			g_variant_get(result, "(&s)", &r1);
+			
+			gchar *suspend;
+			suspend = g_strdup_printf ("CanReboot(): '%s'.\nRebooting.", r1);
+			g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", suspend));
+			g_free(suspend);
 
 			result = g_dbus_proxy_call_sync(proxy, "Reboot", g_variant_new ("(b)", "true"),
 											G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
