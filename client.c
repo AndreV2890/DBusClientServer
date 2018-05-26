@@ -12,9 +12,9 @@
 #include <glib/gprintf.h>
 #include <gio/gio.h>
 
-#define SERVER_BUS_NAME 		"org.example.LeapServer"
-#define SERVER_OBJECT_PATH 		"/org/example/LeapServer"
-#define SERVER_INTERFACE_NAME	"org.example.LeapServer"	
+#define SERVER_BUS_NAME 		"org.cbsd.LeapServer"
+#define SERVER_OBJECT_PATH 		"/org/cbsd/LeapServer"
+#define SERVER_INTERFACE_NAME	"org.cbsd.LeapServer"	
 
 
 void invokeServerMethod(GDBusProxy *proxy) {
@@ -23,16 +23,13 @@ void invokeServerMethod(GDBusProxy *proxy) {
 	const gchar *str;
 	GVariant *parameters;
 
-	parameters = g_variant_new("(s)", "Reboot");
+	const gchar *methodName = "Hibernate";
+	parameters = g_variant_new("(s)", methodName);
 
-	g_printf("Calling HelloWorld()...\n");
-	result = g_dbus_proxy_call_sync(proxy,
-					"HelloWorld",
-					parameters,
-					G_DBUS_CALL_FLAGS_NONE,
-					-1,
-					NULL,
-					&error);
+	g_printf("Calling GestureManager(%s)\n", methodName);
+	result = g_dbus_proxy_call_sync(proxy, "GestureManager", parameters, 
+									G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+
 	g_assert_no_error(error);
 	g_variant_get(result, "(&s)", &str);
 	g_printf("The server answered: '%s'\n", str);
@@ -44,6 +41,7 @@ int main(void)
 {
 	GDBusProxy *proxy;
 	GDBusConnection *conn;
+	GVariant *variant;
 	GError *error = NULL;
 
 	conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
@@ -58,6 +56,14 @@ int main(void)
 				      NULL,						/* GCancellable */
 				      &error);					/* GError */
 	g_assert_no_error(error);
+
+	/* retrieve server version */
+	const gchar *version;
+	variant = g_dbus_proxy_get_cached_property(proxy, "Version");
+	g_assert(variant != NULL);
+	g_variant_get(variant, "s", &version);
+	g_variant_unref(variant);
+	printf("LeapServer interface version: %s\n", version);
 
 	/* invoke server methods */
 	invokeServerMethod(proxy);

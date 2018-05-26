@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define BUS_NAME "org.example.LeapServer"
-#define OBJECT_PATH "/org/example/LeapServer"
+#define SERVER_VERSION "1.0"
+
+#define BUS_NAME "org.cbsd.LeapServer"
+#define OBJECT_PATH "/org/cbsd/LeapServer"
 
 #define LOGIN1_BUS_NAME			"org.freedesktop.login1"
 #define LOGIN1_OBJECT_PATH		"/org/freedesktop/login1"
@@ -19,16 +21,83 @@ static GDBusNodeInfo *introspectionData = NULL;
 /* Introspection data for the service we are exporting */
 static const gchar introspectionXML[] =
   "<node>"
-  "  <interface name='org.example.LeapServer'>"
-  "    <method name='HelloWorld'>"
-  "      <annotation name='org.example.LeapServer.Annotation' value='OnMethod'/>"
-  "      <arg type='s' name='method' direction='in'/>"
+  "  <interface name='org.cbsd.LeapServer'>"
+  "    <method name='GestureManager'>"
+  "      <annotation name='org.cbsd.LeapServer.Annotation' value='OnMethod'/>"
+  "      <arg type='s' name='methodName' direction='in'/>"
   "      <arg type='s' name='response' direction='out'/>"
   "    </method>"
+  "	   <property name='Version' type='s' access='read' />"
   "  </interface>"
   "</node>";
 
-/* --------------------------------------------------------------------------------------- */
+/* Server private functions */
+void Hibernate(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
+	GVariant *result;
+	GError *error = NULL;
+
+	/* check is system che be rebooted */
+	result = g_dbus_proxy_call_sync(proxy, "CanHibernate", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+
+	const gchar *response;
+	g_variant_get(result, "(&s)", &response);
+
+	if (g_strcmp0 (response, "yes") != 0) {
+		printf("User cannot Hibernate\n");
+
+		gchar *str;
+		str = g_strdup_printf ("CanHibernate(): '%s'.", response);
+		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
+		g_free(str);
+	}
+	else {
+		printf("Prepare to hibernate the system\n");
+
+		gchar *str;
+		str = g_strdup_printf ("CanHibernate(): '%s'.", response);
+		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
+		g_free(str);
+
+		/*result = g_dbus_proxy_call_sync(proxy, "Hibernate", g_variant_new ("(b)", "true"),
+										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);*/
+	}
+
+	g_variant_unref(result);
+}
+
+
+void PowerOff(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
+	GVariant *result;
+	GError *error = NULL;
+
+	/* check is system che be rebooted */
+	result = g_dbus_proxy_call_sync(proxy, "CanPowerOff", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+
+	const gchar *response;
+	g_variant_get(result, "(&s)", &response);
+
+	if (g_strcmp0 (response, "yes") != 0) {
+		printf("User cannot PowerOff\n");
+
+		gchar *str;
+		str = g_strdup_printf ("CanPowerOff(): '%s'.", response);
+		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
+		g_free(str);
+	}
+	else {
+		printf("Prepare to poweroff the system\n");
+
+		gchar *str;
+		str = g_strdup_printf ("CanPowerOff(): '%s'.", response);
+		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
+		g_free(str);
+
+		/*result = g_dbus_proxy_call_sync(proxy, "PowerOff", g_variant_new ("(b)", "true"),
+										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);*/
+	}
+
+	g_variant_unref(result);
+}
 
 void Reboot(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 	GVariant *result;
@@ -41,10 +110,10 @@ void Reboot(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 	g_variant_get(result, "(&s)", &response);
 
 	if (g_strcmp0 (response, "yes") != 0) {
-		printf("Cannot Reboot\n");
+		printf("User cannot Reboot\n");
 
 		gchar *str;
-		str = g_strdup_printf ("CanReboot(): '%s'.\nRebooting.", response);
+		str = g_strdup_printf ("CanReboot(): '%s'.\n", response);
 		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
 		g_free(str);
 	}
@@ -52,7 +121,7 @@ void Reboot(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 		printf("Prepare to reboot the system\n");
 
 		gchar *str;
-		str = g_strdup_printf ("CanReboot(): '%s'.\nRebooting.", response);
+		str = g_strdup_printf ("CanReboot(): '%s'.", response);
 		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
 		g_free(str);
 
@@ -60,9 +129,27 @@ void Reboot(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);*/
 	}
 
+	g_variant_unref(result);
 }
 
-static void handleMethodCall (GDBusConnection       *connection,
+/* Methods call handler */
+static GVariant* handleGetProperty(GDBusConnection  *connection,
+								const gchar    *sender,
+								const gchar    *objectPath,
+								const gchar    *interfaceName,
+								const gchar    *propertyName,
+								GError         **error,
+								gpointer        userData)
+{
+	GVariant *ret = NULL;
+
+	if (g_strcmp0 (propertyName, "Version") == 0)
+		ret = g_variant_new_string (SERVER_VERSION);
+
+	return ret;
+}
+
+static void handleMethodCall (GDBusConnection         *connection,
 								const gchar           *sender,
 								const gchar           *objectPath,
 								const gchar           *interfaceName,
@@ -72,12 +159,12 @@ static void handleMethodCall (GDBusConnection       *connection,
 								gpointer               userData) 
 {
 
-	if (g_strcmp0 (methodName, "HelloWorld") == 0) {
+	if (g_strcmp0 (methodName, "GestureManager") == 0) {
+
 		/* create a Proxy of org.freedesktop.login1 */
 		GDBusProxy *proxy;
 		GDBusConnection *conn;
 		GError *error = NULL;
-		//GVariant *result;
 
 		conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
 		g_assert_no_error(error);
@@ -86,75 +173,38 @@ static void handleMethodCall (GDBusConnection       *connection,
 										LOGIN1_OBJECT_PATH, LOGIN1_INTEFACE_NAME, NULL, &error);
 		g_assert_no_error(error);
 
+		/* get methodName from message body */
 		const gchar *body;
-
 		g_variant_get (parameters, "(&s)", &body);
-		printf("%s\n", body);
+
+		/* call the method invoked by client */
 		if(g_strcmp0(body, "Reboot") == 0){
 			printf("Client has called Reboot\n");
 			Reboot(proxy, invocation);
 		}
 		if(g_strcmp0(body, "PowerOff") == 0){
-			printf("Call PowerOff\n");
-			gchar *suspend;
-			suspend = g_strdup_printf ("CanPowerOff()");
-			g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", suspend));
-			g_free(suspend);
+			printf("Client has called Reboot\n");
+			PowerOff(proxy, invocation);
 		}
-		/*gchar *response;
-		response = g_strdup_printf ("You greeted me with '%s'. Thanks!", greeting);
-		//g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", response));
-		g_free (response);*/
+		if(g_strcmp0(body, "Hibernate") == 0){
+			printf("Client has called Hibernate\n");
+			Hibernate(proxy, invocation);
+		}
 
-		/*
-		GDBusProxy *proxy;
-		GDBusConnection *conn;
-		GError *error = NULL;
-		GVariant *result;
-
-		conn = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-		g_assert_no_error(error);
-
-		proxy = g_dbus_proxy_new_sync(conn,
-								 G_DBUS_PROXY_FLAGS_NONE,
-								 NULL,
-								 "org.freedesktop.login1",
-								 "/org/freedesktop/login1",
-								 "org.freedesktop.login1.Manager",
-								 NULL,
-								 &error);
-		g_assert_no_error(error);
-
-
-		result = g_dbus_proxy_call_sync(proxy, "CanReboot", NULL,
-										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
-		const gchar *r1;
-		g_variant_get(result, "(&s)", &r1);
-		
-		gchar *suspend;
-		suspend = g_strdup_printf ("CanReboot(): '%s'.\nRebooting.", r1);
-		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", suspend));
-		g_free(suspend);
-
-		result = g_dbus_proxy_call_sync(proxy, "Reboot", g_variant_new ("(b)", "true"),
-										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
-
-		g_variant_unref(result);
+		/* unref variables */
 		g_object_unref(proxy);
 		g_object_unref(conn);
-		*/
 
 	}
 }
 
 static const GDBusInterfaceVTable interfaceVTable = {
-	handleMethodCall
-	/*handle_get_property,
-	handle_set_property*/
+	handleMethodCall,
+	handleGetProperty
+	/*handle_set_property*/
 };
 
 static void onBusAcquired(GDBusConnection *connection, const gchar *name, gpointer user_data) {
-	printf("Session Bus acquired\n");
 	guint registrationId;
 
 	registrationId = g_dbus_connection_register_object (connection,
@@ -169,7 +219,7 @@ static void onBusAcquired(GDBusConnection *connection, const gchar *name, gpoint
 }
 
 static void onNameAcquired() {
-	printf("Name acquired\n");
+	printf("%s acquired\n", BUS_NAME);
 }
 
 static void onNameLost() {
