@@ -5,16 +5,16 @@ CFLAGS_GLIB  = $(shell pkg-config --cflags --libs glib-2.0)
 
 CFLAGS = -g -Wall -Werror
 
-LEAP_LIBRARY := lib/x64/libLeap.so -Wl,-rpath,lib/x64
+LEAP_LIBRARY := leap/lib/x64/libLeap.so -Wl,-rpath,leap/lib/x64
 
 
 all: server client
 
 server: server.c
-	gcc $< -o $@ $(CFLAGS) $(CFLAGS_GIO)
+	g++ $< -o $@ $(CFLAGS) $(CFLAGS_GIO)
 
 client: client.c
-	gcc $< -o $@ $(CFLAGS) $(CFLAGS_GIO) -I/include $(LEAP_LIBRARY)
+	g++ $< -o $@ $(CFLAGS) $(CFLAGS_GIO) -I leap/include $(LEAP_LIBRARY)
 
 clean:
 	rm -f server

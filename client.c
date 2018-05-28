@@ -9,9 +9,16 @@
  */
 #include <stdbool.h>
 #include <stdio.h>
+#include <unistd.h>
+
+/* glib headers */
 #include <glib/gprintf.h>
 #include <gio/gio.h>
 
+/* Leap motion header */
+#include "Leap.h"
+
+/* define dbus Server interface */
 #define SERVER_BUS_NAME 		"org.cbsd.LeapServer"
 #define SERVER_OBJECT_PATH 		"/org/cbsd/LeapServer"
 #define SERVER_INTERFACE_NAME	"org.cbsd.LeapServer"	
@@ -39,6 +46,24 @@ void invokeServerMethod(GDBusProxy *proxy) {
 
 int main(void)
 {
+	Leap::Controller controller;
+	Leap::Frame f;
+	Leap::HandList handsInFrame;
+
+	while(true){
+
+		f = controller.frame();
+		handsInFrame = f.hands();
+		std::cout << "Hands in frame: " << handsInFrame.count() << std::endl;
+		
+
+		sleep(1);
+	}
+
+    // Keep this process running until Enter is pressed
+    std::cout << "Press Enter to quit..." << std::endl;
+    std::cin.get();
+
 	GDBusProxy *proxy;
 	GDBusConnection *conn;
 	GVariant *variant;
@@ -47,14 +72,14 @@ int main(void)
 	conn = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
 	g_assert_no_error(error);
 
-	proxy = g_dbus_proxy_new_sync(conn,			/* GDBusConnection */
-				      G_DBUS_PROXY_FLAGS_NONE,	/* GDBusProxyFlags */
-				      NULL,						/* GDBusInterfaceInfo */
-				      SERVER_BUS_NAME,			/* name */
-				      SERVER_OBJECT_PATH,		/* object path */
-				      SERVER_INTERFACE_NAME,	/* interface */
-				      NULL,						/* GCancellable */
-				      &error);					/* GError */
+	proxy = g_dbus_proxy_new_sync(conn,			// GDBusConnection 
+				      G_DBUS_PROXY_FLAGS_NONE,	// GDBusProxyFlags 
+				      NULL,						// GDBusInterfaceInfo 
+				      SERVER_BUS_NAME,			// name 
+				      SERVER_OBJECT_PATH,		// object path 
+				      SERVER_INTERFACE_NAME,	// interface 
+				      NULL,						// GCancellable 
+				      &error);					// GError 
 	g_assert_no_error(error);
 
 	/* retrieve server version */
@@ -66,9 +91,10 @@ int main(void)
 	printf("LeapServer interface version: %s\n", version);
 
 	/* invoke server methods */
-	invokeServerMethod(proxy);
+	//invokeServerMethod(proxy);
 
 	g_object_unref(proxy);
 	g_object_unref(conn);
+	
 	return 0;
 }
