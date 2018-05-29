@@ -18,6 +18,9 @@
 /* Leap motion header */
 #include "Leap.h"
 
+/* librealt header */
+#include "my_thread_lib.h"
+
 /* define dbus Server interface */
 #define SERVER_BUS_NAME 		"org.cbsd.LeapServer"
 #define SERVER_OBJECT_PATH 		"/org/cbsd/LeapServer"
