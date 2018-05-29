@@ -11,7 +11,7 @@ LEAP_LIBRARY := leap/lib/x64/libLeap.so -Wl,-rpath,leap/lib/x64
 
 # librealt.so location and name
 REALT_NAME = realt
-REALT_LIBRARY := leap/lib/x64/libLeap.so -Wl,-rpath,leap/lib/x64
+REALT_LIBRARY := realt/lib/lib$(REALT_NAME).so -Wl,-rpath,realt/lib
 
 # build all process
 all: d_server d_client
@@ -33,8 +33,8 @@ d_client: client.c librealt
 
 # clean project folder
 clean:
-	rm -f server
-	rm -f client
+	rm -f d_server
+	rm -f d_client
 	rm -f -r realt/lib
 
 .PHONY: all clean client server librealt
