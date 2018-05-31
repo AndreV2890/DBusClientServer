@@ -11,6 +11,10 @@
 #include <stdio.h>
 #include <unistd.h>
 
+/* X11 headers*/
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+
 /* glib headers */
 #include <glib/gprintf.h>
 #include <gio/gio.h>
@@ -207,8 +211,126 @@ bool leap_dbus_main_loop() {
 	return false;
 }
 
-int main(void) {
+/* ------- Move mouse manager ------*/
+// Simulate mouse click
+void click (Display *display, int button) {
+  // Create and setting up the event
+  XEvent event;
+  memset (&event, 0, sizeof (event));
+  event.xbutton.button = button;
+  event.xbutton.same_screen = True;
+  event.xbutton.subwindow = DefaultRootWindow (display);
+  while (event.xbutton.subwindow)
+    {
+      event.xbutton.window = event.xbutton.subwindow;
+      XQueryPointer (display, event.xbutton.window,
+		     &event.xbutton.root, &event.xbutton.subwindow,
+		     &event.xbutton.x_root, &event.xbutton.y_root,
+		     &event.xbutton.x, &event.xbutton.y,
+		     &event.xbutton.state);
+    }
+  // Press
+  event.type = ButtonPress;
+  if (XSendEvent (display, PointerWindow, True, ButtonPressMask, &event) == 0)
+    fprintf (stderr, "Error to send the event!\n");
+  XFlush (display);
+  usleep (1);
+  // Release
+  event.type = ButtonRelease;
+  if (XSendEvent (display, PointerWindow, True, ButtonReleaseMask, &event) == 0)
+    fprintf (stderr, "Error to send the event!\n");
+  XFlush (display);
+  usleep (1);
+}
+
+// Get mouse coordinates
+void coords (Display *display, int *x, int *y) {
+  XEvent event;
+  XQueryPointer (display, DefaultRootWindow (display),
+                 &event.xbutton.root, &event.xbutton.window,
+                 &event.xbutton.x_root, &event.xbutton.y_root,
+                 &event.xbutton.x, &event.xbutton.y,
+                 &event.xbutton.state);
+  *x = event.xbutton.x;
+  *y = event.xbutton.y;
+}
+
+// Move mouse pointer (relative)
+void move (Display *display, int x, int y) {
+  std::cout << "Relative -> X: " << x << "\tY: " << y << std::endl;
+  XWarpPointer (display, None, None, 0,0,0,0, x, y);
+  XFlush (display);
+  usleep (1);
+}
+
+// Move mouse pointer (absolute)
+void move_to (Display *display, int x, int y) {
+  std::cout << "Absolute -> X: " << x << "\tY: " << y << std::endl;
+  int cur_x, cur_y;
+  coords (display, &cur_x, &cur_y);
+  std::cout << "Retuned coord -> X: " << cur_x << "\tY: " << cur_y << std::endl;
+  XWarpPointer (display, None, None, 0,0,0,0, -cur_x, -cur_y);
+  usleep(1);
+  XFlush(display);
+  XWarpPointer (display, None, None, 0,0,0,0, x, y);
+  XFlush(display);
+  usleep (1);
+}
+
+// Get pixel color at coordinates x,y
+void pixel_color (Display *display, int x, int y, XColor *color) {
+  XImage *image;
+  image = XGetImage (display, DefaultRootWindow (display), x, y, 1, 1, AllPlanes, XYPixmap);
+  color->pixel = XGetPixel (image, 0, 0);
+  XFree (image);
+  XQueryColor (display, DefaultColormap(display, DefaultScreen (display)), color);
+}
+
+
+
+int main(int argc,char * argv[]) {
+
+ //int starting = 3;
+  int x = atoi(argv[1]);
+  int y = atoi(argv[2]);
+
+  std::cout << "Input -> X: " << x << "\tY: " << y << std::endl;
+
+  // Open X display
+  Display *display = XOpenDisplay (NULL);
+  if (display == NULL)
+    {
+      fprintf (stderr, "Can't open display!\n");
+      return -1;
+    }
+  
+  // Wait 3 seconds to start
+  /*printf ("Starting in   ");
+  fflush (stdout);
+  while (starting > 0)
+    {
+      printf ("\b\b\b %d...", starting);
+      fflush (stdout);
+      sleep (1);
+      starting--;
+    }
+  printf ("\n");*/
+
+  // Start
+  while (x <= 1200)
+    {
+      //click (display, Button1);
+      move_to(display, x, y);
+      x+=100;
+      //coords (dispaly, &x, &y);
+      sleep (1);
+    }
+
+  // Close X display and exit
+  XCloseDisplay (display);
+  return 0;
 	
+	/*
 	bool clientIsFinished = false;
 
 	while(!clientIsFinished){
@@ -216,5 +338,5 @@ int main(void) {
 		clientIsFinished = leap_dbus_main_loop();
 	}
 	
-	return 0;
+	return 0;*/
 }
