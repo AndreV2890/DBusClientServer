@@ -289,7 +289,7 @@ void pixel_color (Display *display, int x, int y, XColor *color) {
 
 
 int main(int argc,char * argv[]) {
-
+  
  //int starting = 3;
   int x = atoi(argv[1]);
   int y = atoi(argv[2]);
@@ -317,12 +317,13 @@ int main(int argc,char * argv[]) {
   printf ("\n");*/
 
   // Start
-  while (x <= 1200)
+  //while (x <= 1200)
     {
-      //click (display, Button1);
-      move_to(display, x, y);
-      x+=100;
-      //coords (dispaly, &x, &y);
+      click (display, Button3);
+      //move_to(display, x, y);
+      //x+=100;
+      //coords (display, &x, &y);
+      //std::cout << "Coord -> X: " << x << "\tY: " << y << std::endl;
       sleep (1);
     }
 
