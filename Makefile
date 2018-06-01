@@ -1,8 +1,6 @@
 CC := g++
 CFLAGS := -g -Wall -Werror
 
-#CFLAGS_DBUS := $(shell pkg-config --cflags --libs dbus-1)
-#CFLAGS_DBUS_GLIB := $(shell pkg-config --cflags --libs dbus-glib-1)
 CFLAGS_GIO  := $(shell pkg-config --cflags --libs gio-2.0)
 CFLAGS_GLIB  := $(shell pkg-config --cflags --libs glib-2.0)
 CFLAGS_X11 := $(shell pkg-config --cflags --libs x11)
@@ -26,11 +24,11 @@ realt/lib/lib$(REALT_NAME).so: $(wildcard realt/src/*.c)
 
 # build dbus-server
 d_server: server.c
-	gcc $< -o $@ $(CFLAGS) $(CFLAGS_GIO)
+	gcc $< -o $@ $(CFLAGS) $(CFLAGS_GIO) $(CFLAGS_X11)
 
 # build dbus-client
 d_client: client.c librealt
-	$(CC) $< -o $@ $(CFLAGS) $(CFLAGS_GIO) $(CFLAGS_X11) -Ileap/include $(LEAP_LIBRARY) -Irealt/include $(REALT_LIBRARY)
+	$(CC) $< -o $@ $(CFLAGS) $(CFLAGS_GIO) -Ileap/include $(LEAP_LIBRARY) -Irealt/include $(REALT_LIBRARY)
 
 # clean project folder
 clean:
@@ -38,4 +36,4 @@ clean:
 	rm -f d_client
 	rm -f -r realt/lib
 
-.PHONY: all clean client server librealt
+.PHONY: all clean d_client d_server librealt

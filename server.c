@@ -1,12 +1,19 @@
-#include <gio/gio.h>
-
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 
+/* glib headers */
+#include <gio/gio.h>
+
+/* X11 headers*/
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+
 #define SERVER_VERSION "1.0"
+#define LEAP_X_ABS_MAX 250
+#define LEAP_Y_ABS_MAX 200
 
 #define BUS_NAME "org.cbsd.LeapServer"
 #define OBJECT_PATH "/org/cbsd/LeapServer"
@@ -16,27 +23,153 @@
 #define LOGIN1_INTEFACE_NAME	"org.freedesktop.login1.Manager"
 
 
+gint16 monitorWidth;
+gint16 monitorHeigth;
+gboolean firstTime = TRUE;
+
 static GDBusNodeInfo *introspectionData = NULL;
 
 /* Introspection data for the service we are exporting */
 static const gchar introspectionXML[] =
-  "<node>"
-  "  <interface name='org.cbsd.LeapServer'>"
-  "    <method name='GestureManager'>"
-  "      <annotation name='org.cbsd.LeapServer.Annotation' value='OnMethod'/>"
-  "      <arg type='s' name='methodName' direction='in'/>"
-  "      <arg type='s' name='response' direction='out'/>"
-  "    </method>"
-  "	   <property name='Version' type='s' access='read' />"
-  "  </interface>"
-  "</node>";
+	"<node>"
+	"	<interface name='org.cbsd.LeapServer'>"
+	"		<method name='GestureManager'>"
+	"			<annotation name='org.cbsd.LeapServer.Annotation' value='OnMethod'/>"
+	"			<arg type='s' name='methodName' direction='in'/>"
+	"			<arg type='s' name='response' direction='out'/>"
+	"		</method>"
+	"		<method name='MotionManager'>"
+	"			<annotation name='org.cbsd.LeapServer.Annotation' value='OnMethod'/>"
+	"			<arg type='n' name='methodName' direction='in'/>"
+	"			<arg type='n' name='methodName' direction='in'/>"
+	"			<arg type='s' name='response' direction='out'/>"
+	"		</method>"
+	"		<property name='Version' type='s' access='read' />"
+	"	</interface>"
+	"</node>";
 
-/* Server private functions */
+/* ------- Mouse Manager Functions ------- */
+
+/* Simulate mouse click */
+void click (Display *display, int button) {
+	// Create and setting up the event
+	XEvent event;
+	memset (&event, 0, sizeof (event));
+	event.xbutton.button = button;
+	event.xbutton.same_screen = True;
+	event.xbutton.subwindow = DefaultRootWindow (display);
+	while (event.xbutton.subwindow) {
+		event.xbutton.window = event.xbutton.subwindow;
+		XQueryPointer (display, event.xbutton.window,
+		&event.xbutton.root, &event.xbutton.subwindow,
+		&event.xbutton.x_root, &event.xbutton.y_root,
+		&event.xbutton.x, &event.xbutton.y,
+		&event.xbutton.state);
+	}
+	// Press
+	event.type = ButtonPress;
+	if (XSendEvent (display, PointerWindow, True, ButtonPressMask, &event) == 0)
+		fprintf (stderr, "Error to send the event!\n");
+	XFlush (display);
+	usleep (1);
+	// Release
+	event.type = ButtonRelease;
+	if (XSendEvent (display, PointerWindow, True, ButtonReleaseMask, &event) == 0)
+		fprintf (stderr, "Error to send the event!\n");
+	XFlush (display);
+	usleep (1);
+}
+
+/* Get mouse coordinates */
+void coords (Display *display, int *x, int *y) {
+	XEvent event;
+	XQueryPointer(display, DefaultRootWindow (display),
+					&event.xbutton.root, &event.xbutton.window,
+					&event.xbutton.x_root, &event.xbutton.y_root,
+					&event.xbutton.x, &event.xbutton.y,
+					&event.xbutton.state);
+	*x = event.xbutton.x;
+	*y = event.xbutton.y;
+}
+
+/* Move mouse pointer to absolute coordinate */
+void move_to (Display *display, int x, int y) {
+	int cur_x, cur_y;
+	coords (display, &cur_x, &cur_y);
+
+	XWarpPointer (display, None, None, 0,0,0,0, -cur_x, -cur_y);
+	usleep(1);
+	XFlush(display);
+
+	printf("Received X: %d Y: %d\n\n", x ,y);
+
+	gint16 xScale = monitorWidth/(2*LEAP_X_ABS_MAX);
+	gint16 yScale = monitorHeigth/(2*LEAP_Y_ABS_MAX);
+
+	if(x < 0)
+		x = LEAP_X_ABS_MAX +x;
+	else 
+		x += LEAP_X_ABS_MAX;
+
+	printf("Operation X: %d Y: %d\n\n", x ,y);
+
+	if(y < 0)
+		y = LEAP_Y_ABS_MAX +y;
+	else 
+		y += LEAP_Y_ABS_MAX;
+
+	x *= xScale;
+	if(x > monitorWidth)
+		x = monitorWidth;
+
+	y *= yScale;
+	if(y > monitorHeigth)
+		y = monitorHeigth;
+
+	printf("X: %d Y: %d\n\n", x ,y);
+	XWarpPointer (display, None, None, 0,0,0,0, x, y);
+	XFlush(display);
+	usleep (1);
+}
+
+/* Move mouse pointer to relative coordinate */
+void move (Display *display, gint16 x, gint16 y) {
+	if(firstTime == TRUE){
+		move_to(display, monitorWidth/2, monitorHeigth/2);
+		usleep(1);
+		XFlush(display);
+		
+		firstTime = FALSE;
+		printf("First ");
+	} 
+
+	int cur_x, cur_y;
+	coords(display, &cur_x, &cur_y);
+
+	gint16 newX = cur_x + x;
+	gint16 newY = cur_y + y;
+	printf("oldX: %d oldY: %d \toffsetX: %d offsetY: %d\tnewX: %d newY: %d\n\n", cur_x, cur_y, x ,y, newX, newY);
+
+	XWarpPointer (display, None, None, 0,0,0,0, newX, newY);
+	usleep(1);
+	XFlush (display);
+}
+
+// Get pixel color at coordinates x,y
+void pixel_color (Display *display, int x, int y, XColor *color) {
+	XImage *image;
+	image = XGetImage (display, DefaultRootWindow (display), x, y, 1, 1, AllPlanes, XYPixmap);
+	color->pixel = XGetPixel (image, 0, 0);
+	XFree (image);
+	XQueryColor (display, DefaultColormap(display, DefaultScreen (display)), color);
+}
+
+/* Server helper functions */
 void Hibernate(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 	GVariant *result;
 	GError *error = NULL;
 
-	/* check is system che be rebooted */
+	/* check is system che be hibernated */
 	result = g_dbus_proxy_call_sync(proxy, "CanHibernate", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 
 	const gchar *response;
@@ -58,8 +191,8 @@ void Hibernate(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
 		g_free(str);
 
-		/*result = g_dbus_proxy_call_sync(proxy, "Hibernate", g_variant_new ("(b)", "true"),
-										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);*/
+		result = g_dbus_proxy_call_sync(proxy, "Hibernate", g_variant_new ("(b)", "true"),
+										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 	}
 
 	g_variant_unref(result);
@@ -70,7 +203,7 @@ void PowerOff(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 	GVariant *result;
 	GError *error = NULL;
 
-	/* check is system che be rebooted */
+	/* check is system che be powered off */
 	result = g_dbus_proxy_call_sync(proxy, "CanPowerOff", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 
 	const gchar *response;
@@ -92,8 +225,8 @@ void PowerOff(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
 		g_free(str);
 
-		/*result = g_dbus_proxy_call_sync(proxy, "PowerOff", g_variant_new ("(b)", "true"),
-										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);*/
+		result = g_dbus_proxy_call_sync(proxy, "PowerOff", g_variant_new ("(b)", "true"),
+										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 	}
 
 	g_variant_unref(result);
@@ -125,8 +258,8 @@ void Reboot(GDBusProxy *proxy, GDBusMethodInvocation *invocation){
 		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
 		g_free(str);
 
-		/*result = g_dbus_proxy_call_sync(proxy, "Reboot", g_variant_new ("(b)", "true"),
-										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);*/
+		result = g_dbus_proxy_call_sync(proxy, "Reboot", g_variant_new ("(b)", "true"),
+										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 	}
 
 	g_variant_unref(result);
@@ -196,6 +329,30 @@ static void handleMethodCall (GDBusConnection         *connection,
 		g_object_unref(conn);
 
 	}
+
+	if(g_strcmp0 (methodName, "MotionManager") == 0) {
+		gint16 x;
+		gint16 y;
+		g_variant_get (parameters, "(nn)", &x, &y);
+
+		// Open X display
+		Display *display = XOpenDisplay (NULL);
+		if (display == NULL) {
+			fprintf (stderr, "Can't open display!\n");
+			gchar *str;
+			str = g_strdup_printf ("MotionManager(): X11 error -> Can't open display!.");
+			g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
+		}
+
+		move_to(display, x, y);
+
+		gchar *str;
+		str = g_strdup_printf ("MotionManager().");
+		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
+		g_free(str);
+
+		XCloseDisplay (display);
+	}
 }
 
 static const GDBusInterfaceVTable interfaceVTable = {
@@ -227,7 +384,22 @@ static void onNameLost() {
 }
 
 int main(void) {
-	
+
+	/* Acquire information about monitor */
+	Display *display;
+	Screen *screen;
+
+	display = XOpenDisplay(NULL);
+	screen = ScreenOfDisplay(display, 0);
+
+	printf("Monitor Pixels: %dx%d\n", screen->width, screen->height);
+	monitorWidth = screen->width;
+	monitorHeigth = screen->height;
+
+	/* Move mouse pointer in the monitor center */
+	//move_to(display, screen->width/2, screen->height/2);
+
+	/* Instanciate bus on DBUS */
 	guint busId;
 	GMainLoop *loop;
 
