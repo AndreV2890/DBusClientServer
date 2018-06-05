@@ -69,22 +69,37 @@ GDBusProxy* createProxy() {
 }
 
 void invokeServerMethod(GDBusProxy *proxy, const gchar* methodName, gint16 x, gint16 y) {
-	GVariant *result;
-	GError *error = NULL;
+	
 	const gchar *str;
+	GVariant *result;
 	GVariant *parameters;
+	GError *error = NULL;
 
 	if(methodName != NULL) {
-		parameters = g_variant_new("(s)", methodName);
 
-		g_printf("Calling GestureManager(%s)\n", methodName);
-		result = g_dbus_proxy_call_sync(proxy, "GestureManager", parameters, 
-										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);	
+		if(g_strcmp0 (methodName, "GestureManager") == 0) {
+
+			parameters = g_variant_new("(s)", methodName);
+
+			g_printf("Calling GestureManager(%s)\n", methodName);
+			result = g_dbus_proxy_call_sync(proxy, "GestureManager", parameters, 
+											G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);	
+		}
+
+		if(g_strcmp0 (methodName, "ClickManager") == 0) { 
+
+			parameters = g_variant_new("(n)", x);
+
+			g_printf("Calling ClickManager(%s)\n", methodName);
+			result = g_dbus_proxy_call_sync(proxy, "ClickManager", parameters, 
+											G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);	
+		}		
+
 	}
 	else {
 		parameters = g_variant_new("(nn)", x, y);
 
-		g_printf("Calling MotionManager(X: %d, Y: %d)\n", x, y);
+		g_printf("Calling MotionManager(x: %d, y: %d)\n", x, y);
 		result = g_dbus_proxy_call_sync(proxy, "MotionManager", parameters, 
 										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 	}
@@ -129,6 +144,37 @@ void* rightHandThread(void* arg) {
 				gint16 y = (int)position.z;
 
 				invokeServerMethod(proxy, NULL, x, y);
+
+				if(!(gestures.isEmpty()) && gestures[0].type() == Leap::Gesture::TYPE_KEY_TAP) {
+
+					printf("Detected mouse click\n");
+
+					Leap::PointableList pointables;
+					 
+					//gesture = gestures[0];
+					pointables = hand.pointables();
+
+					int i = 0;
+					int min = 1000;
+					int fingerIndex = -1;					
+
+					for(Leap::PointableList::const_iterator pl = pointables.begin(); pl != pointables.end(); pl++){
+						Leap::Pointable pointable = *pl;
+
+						int position = pointable.tipPosition().y;
+						if(position < min){
+							min = position;
+							fingerIndex = i;
+						}
+
+						i++;
+					}
+					
+					if(fingerIndex == Leap::Finger::TYPE_INDEX)
+						invokeServerMethod(proxy, "ClickManager", 1, 0);
+					else if(fingerIndex == Leap::Finger::TYPE_MIDDLE)
+						invokeServerMethod(proxy, "ClickManager", 3, 0);
+				}
 
 			}
 		}

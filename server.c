@@ -38,10 +38,15 @@ static const gchar introspectionXML[] =
 	"			<arg type='s' name='methodName' direction='in'/>"
 	"			<arg type='s' name='response' direction='out'/>"
 	"		</method>"
+	"		<method name='ClickManager'>"
+	"			<annotation name='org.cbsd.LeapServer.Annotation' value='OnMethod'/>"
+	"			<arg type='n' name='button' direction='in'/>"
+	"			<arg type='s' name='response' direction='out'/>"
+	"		</method>"
 	"		<method name='MotionManager'>"
 	"			<annotation name='org.cbsd.LeapServer.Annotation' value='OnMethod'/>"
-	"			<arg type='n' name='methodName' direction='in'/>"
-	"			<arg type='n' name='methodName' direction='in'/>"
+	"			<arg type='n' name='x' direction='in'/>"
+	"			<arg type='n' name='y' direction='in'/>"
 	"			<arg type='s' name='response' direction='out'/>"
 	"		</method>"
 	"		<property name='Version' type='s' access='read' />"
@@ -51,7 +56,7 @@ static const gchar introspectionXML[] =
 /* ------- Mouse Manager Functions ------- */
 
 /* Get mouse coordinates */
-void getMouseCoordinates(Display *display, int *x, int *y) {
+void getMouseCoordinates(Display *display, gint16 *x, gint16 *y) {
 	XEvent event;
 	XQueryPointer(display, DefaultRootWindow (display),
 					&event.xbutton.root, &event.xbutton.window,
@@ -63,7 +68,7 @@ void getMouseCoordinates(Display *display, int *x, int *y) {
 }
 
 /* Simulate mouse click */
-void click (Display *display, int button) {
+void clickMouse (Display *display, gint16 button) {
 	// Create and setting up the event
 	XEvent event;
 	memset (&event, 0, sizeof (event));
@@ -95,7 +100,7 @@ void click (Display *display, int button) {
 }
 
 /* Move mouse pointer to x and y coordinate */
-void moveMouse (Display *display, int x, int y) {
+void moveMouse (Display *display, gint16 x, gint16 y) {
 
 	printf("Received x: %d y: %d\n\n", x ,y);
 
@@ -292,6 +297,31 @@ static void handleMethodCall (GDBusConnection         *connection,
 		/* unref variables */
 		g_object_unref(proxy);
 		g_object_unref(conn);
+
+	}
+
+	if (g_strcmp0 (methodName, "ClickManager") == 0) {
+		gint16 button;
+
+		g_variant_get (parameters, "(n)", &button);
+
+		// Open X display
+		Display *display = XOpenDisplay (NULL);
+		if (display == NULL) {
+			fprintf (stderr, "Can't open display!\n");
+			gchar *str;
+			str = g_strdup_printf ("ClickManager(): X11 error -> Can't open display!.");
+			g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
+		}
+
+		clickMouse(display, button);
+
+		gchar *str;
+		str = g_strdup_printf ("ClickManager().");
+		g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
+		g_free(str);
+
+		XCloseDisplay (display);
 
 	}
 
