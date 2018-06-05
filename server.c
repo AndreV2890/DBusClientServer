@@ -50,6 +50,18 @@ static const gchar introspectionXML[] =
 
 /* ------- Mouse Manager Functions ------- */
 
+/* Get mouse coordinates */
+void getMouseCoordinates(Display *display, int *x, int *y) {
+	XEvent event;
+	XQueryPointer(display, DefaultRootWindow (display),
+					&event.xbutton.root, &event.xbutton.window,
+					&event.xbutton.x_root, &event.xbutton.y_root,
+					&event.xbutton.x, &event.xbutton.y,
+					&event.xbutton.state);
+	*x = event.xbutton.x;
+	*y = event.xbutton.y;
+}
+
 /* Simulate mouse click */
 void click (Display *display, int button) {
 	// Create and setting up the event
@@ -66,12 +78,14 @@ void click (Display *display, int button) {
 		&event.xbutton.x, &event.xbutton.y,
 		&event.xbutton.state);
 	}
+
 	// Press
 	event.type = ButtonPress;
 	if (XSendEvent (display, PointerWindow, True, ButtonPressMask, &event) == 0)
 		fprintf (stderr, "Error to send the event!\n");
 	XFlush (display);
 	usleep (1);
+
 	// Release
 	event.type = ButtonRelease;
 	if (XSendEvent (display, PointerWindow, True, ButtonReleaseMask, &event) == 0)
@@ -80,28 +94,10 @@ void click (Display *display, int button) {
 	usleep (1);
 }
 
-/* Get mouse coordinates */
-void coords (Display *display, int *x, int *y) {
-	XEvent event;
-	XQueryPointer(display, DefaultRootWindow (display),
-					&event.xbutton.root, &event.xbutton.window,
-					&event.xbutton.x_root, &event.xbutton.y_root,
-					&event.xbutton.x, &event.xbutton.y,
-					&event.xbutton.state);
-	*x = event.xbutton.x;
-	*y = event.xbutton.y;
-}
+/* Move mouse pointer to x and y coordinate */
+void moveMouse (Display *display, int x, int y) {
 
-/* Move mouse pointer to absolute coordinate */
-void move_to (Display *display, int x, int y) {
-	int cur_x, cur_y;
-	coords (display, &cur_x, &cur_y);
-
-	XWarpPointer (display, None, None, 0,0,0,0, -cur_x, -cur_y);
-	usleep(1);
-	XFlush(display);
-
-	printf("Received X: %d Y: %d\n\n", x ,y);
+	printf("Received x: %d y: %d\n\n", x ,y);
 
 	gint16 xScale = monitorWidth/(2*LEAP_X_ABS_MAX);
 	gint16 yScale = monitorHeigth/(2*LEAP_Y_ABS_MAX);
@@ -110,8 +106,6 @@ void move_to (Display *display, int x, int y) {
 		x = LEAP_X_ABS_MAX +x;
 	else 
 		x += LEAP_X_ABS_MAX;
-
-	printf("Operation X: %d Y: %d\n\n", x ,y);
 
 	if(y < 0)
 		y = LEAP_Y_ABS_MAX +y;
@@ -126,42 +120,13 @@ void move_to (Display *display, int x, int y) {
 	if(y > monitorHeigth)
 		y = monitorHeigth;
 
-	printf("X: %d Y: %d\n\n", x ,y);
-	XWarpPointer (display, None, None, 0,0,0,0, x, y);
-	XFlush(display);
-	usleep (1);
-}
+	printf("Set new mouse position to x: %d y: %d\n\n", x ,y);
 
-/* Move mouse pointer to relative coordinate */
-void move (Display *display, gint16 x, gint16 y) {
-	if(firstTime == TRUE){
-		move_to(display, monitorWidth/2, monitorHeigth/2);
-		usleep(1);
-		XFlush(display);
-		
-		firstTime = FALSE;
-		printf("First ");
-	} 
+	XWarpPointer(display, None, RootWindow(display, DefaultScreen(display)), 0, 0, 0, 0, x, y);
 
-	int cur_x, cur_y;
-	coords(display, &cur_x, &cur_y);
-
-	gint16 newX = cur_x + x;
-	gint16 newY = cur_y + y;
-	printf("oldX: %d oldY: %d \toffsetX: %d offsetY: %d\tnewX: %d newY: %d\n\n", cur_x, cur_y, x ,y, newX, newY);
-
-	XWarpPointer (display, None, None, 0,0,0,0, newX, newY);
-	usleep(1);
 	XFlush (display);
-}
+	usleep(1);
 
-// Get pixel color at coordinates x,y
-void pixel_color (Display *display, int x, int y, XColor *color) {
-	XImage *image;
-	image = XGetImage (display, DefaultRootWindow (display), x, y, 1, 1, AllPlanes, XYPixmap);
-	color->pixel = XGetPixel (image, 0, 0);
-	XFree (image);
-	XQueryColor (display, DefaultColormap(display, DefaultScreen (display)), color);
 }
 
 /* Server helper functions */
@@ -344,7 +309,7 @@ static void handleMethodCall (GDBusConnection         *connection,
 			g_dbus_method_invocation_return_value (invocation, g_variant_new ("(s)", str));
 		}
 
-		move_to(display, x, y);
+		moveMouse(display, x, y);
 
 		gchar *str;
 		str = g_strdup_printf ("MotionManager().");
@@ -397,7 +362,7 @@ int main(void) {
 	monitorHeigth = screen->height;
 
 	/* Move mouse pointer in the monitor center */
-	//move_to(display, screen->width/2, screen->height/2);
+	moveMouse(display, screen->width/2, screen->height/2);
 
 	/* Instanciate bus on DBUS */
 	guint busId;
