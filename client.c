@@ -27,7 +27,12 @@
 #define SERVER_INTERFACE_NAME	"org.cbsd.LeapServer"
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t gestureCond = PTHREAD_COND_INITIALIZER;
+
+bool gestureDetected = false;
+
 Leap::Controller controller;
+Leap::GestureList gestures;
 
 GDBusProxy* createProxy() {
 
@@ -68,9 +73,9 @@ GDBusProxy* createProxy() {
 	return proxy;
 }
 
-void invokeServerMethod(GDBusProxy *proxy, const gchar* methodName, gint16 x, gint16 y) {
+void invokeServerMethod(GDBusProxy *proxy, const gchar* methodName, const gchar* remoteMethod, gint16 x, gint16 y) {
 	
-	const gchar *str;
+	gchar *str;
 	GVariant *result;
 	GVariant *parameters;
 	GError *error = NULL;
@@ -79,11 +84,12 @@ void invokeServerMethod(GDBusProxy *proxy, const gchar* methodName, gint16 x, gi
 
 		if(g_strcmp0 (methodName, "GestureManager") == 0) {
 
-			parameters = g_variant_new("(s)", methodName);
+			parameters = g_variant_new("(s)", remoteMethod);
 
-			g_printf("Calling GestureManager(%s)\n", methodName);
+			g_printf("Calling GestureManager(%s)\n", remoteMethod);
+
 			result = g_dbus_proxy_call_sync(proxy, "GestureManager", parameters, 
-											G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);	
+											G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 		}
 
 		if(g_strcmp0 (methodName, "ClickManager") == 0) { 
@@ -99,18 +105,19 @@ void invokeServerMethod(GDBusProxy *proxy, const gchar* methodName, gint16 x, gi
 	else {
 		parameters = g_variant_new("(nn)", x, y);
 
-		g_printf("Calling MotionManager(x: %d, y: %d)\n", x, y);
+		//g_printf("Calling MotionManager(x: %d, y: %d)\n", x, y);
 		result = g_dbus_proxy_call_sync(proxy, "MotionManager", parameters, 
 										G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 	}
 
 	g_assert_no_error(error);
-	g_variant_get(result, "(&s)", &str);
-	g_printf("The server answered: '%s'\n\n", str);
+	g_variant_get(result, "(s)", &str);
+	//g_printf("The server answered: '%s'\n\n", str);
+	g_free(str);
 	g_variant_unref(result);
 }	
 
-
+/*
 void* rightHandThread(void* arg) {
 
 	TaskPar *tp;
@@ -185,9 +192,9 @@ void* rightHandThread(void* arg) {
 		wait_for_period(tp);
 	}
 
-}
+}*/
 
-void* leftHandThread(void* arg) {
+/*void* leftHandThread(void* arg) {
 
 	TaskPar *tp;
 
@@ -259,27 +266,207 @@ void* leftHandThread(void* arg) {
 		wait_for_period(tp);
 	}
 
+}*/
+
+void* mouseThread(void* arg) {
+
+	TaskPar *tp;
+
+	GDBusProxy *proxy;
+
+	Leap::Frame frame;
+	Leap::HandList hands;
+	//Leap::GestureList gestures;
+
+	tp = (TaskPar *) arg;
+	set_period(tp);
+
+	proxy = createProxy();
+
+	controller.enableGesture(Leap::Gesture::TYPE_CIRCLE);
+	controller.enableGesture(Leap::Gesture::TYPE_SWIPE);
+	controller.enableGesture(Leap::Gesture::TYPE_KEY_TAP);
+
+	while(true) {
+
+		frame = controller.frame();
+
+		hands = frame.hands();
+
+		pthread_mutex_lock(&mutex);
+        gestures = frame.gestures();
+        pthread_mutex_unlock(&mutex);
+		
+
+		for(Leap::HandList::const_iterator h = hands.begin(); h != hands.end(); h++) {
+    		const Leap::Hand hand = *h;
+			if(hand.isRight()) {
+				Leap::Vector position = hand.palmPosition();
+				//std::cout << "X: " << (int)position.x << " Z: "<< (int)position.z << std::endl;
+				
+				gint16 x = (int)position.x;
+				gint16 y = (int)position.z;
+
+				invokeServerMethod(proxy, NULL, NULL, x, y);
+			}
+		}
+
+		if (!gestures.isEmpty()) {
+			pthread_mutex_lock(&mutex);
+        	gestureDetected = true;
+        	pthread_cond_signal(&gestureCond);
+        	pthread_mutex_unlock(&mutex);
+		}
+
+		if (deadline_miss(tp)) {
+			printf("leftHandThread: %d\n",tp->dmiss);
+		}
+		wait_for_period(tp);
+	}
+
+}
+
+void* gestureThread(void* arg) {
+
+	TaskPar *tp;
+
+	tp = (TaskPar *) arg;
+	set_period(tp);
+
+	GDBusProxy *proxy;
+	proxy = createProxy();
+
+	while(true) {
+
+		pthread_mutex_lock(&mutex);
+        while (!gestureDetected)
+            pthread_cond_wait(&gestureCond, &mutex);
+        pthread_mutex_unlock(&mutex);
+
+        pthread_mutex_lock(&mutex);
+        Leap::GestureList tmpGestures = gestures;
+        pthread_mutex_unlock(&mutex);
+
+		for(Leap::GestureList::const_iterator gl = tmpGestures.begin(); gl != tmpGestures.end(); gl++) {
+    		const Leap::Gesture gesture = *gl;
+
+    		Leap::HandList hands = gesture.hands();
+
+    		for(Leap::HandList::const_iterator hl = hands.begin(); hl != hands.end(); hl ++){
+    			Leap::Hand hand = *hl;
+    			if(hand.isRight()){
+    				if(gesture.type() == Leap::Gesture::TYPE_KEY_TAP) { 
+						printf("Detected mouse click\n");
+
+						Leap::PointableList pointables;
+						 
+						pointables = hand.pointables();
+
+						int i = 0;
+						int min = 1000;
+						int fingerIndex = -1;					
+
+						for(Leap::PointableList::const_iterator pl = pointables.begin(); pl != pointables.end(); pl++){
+							Leap::Pointable pointable = *pl;
+
+							int position = pointable.tipPosition().y;
+							if(position < min){
+								min = position;
+								fingerIndex = i;
+							}
+
+							i++;
+						}
+						
+						if(fingerIndex == Leap::Finger::TYPE_INDEX)
+							invokeServerMethod(proxy, "ClickManager", NULL, 1, 0);
+						else if(fingerIndex == Leap::Finger::TYPE_MIDDLE)
+							invokeServerMethod(proxy, "ClickManager", NULL, 3, 0);
+	
+						continue;
+					}
+    			}
+    			else { // if hand is left
+					switch(gesture.type()) {
+						//Handle circle gestures
+						case Leap::Gesture::TYPE_CIRCLE:
+							if(gesture.state() == Leap::Gesture::STATE_UPDATE) {
+								printf("Detected Gesture: TYPE_CIRCLE\n");
+								invokeServerMethod(proxy, "GestureManager", "Reboot", 0, 0);
+							}
+				            break;
+				        //Handle key tap gestures
+				        case Leap::Gesture::TYPE_KEY_TAP:
+							printf("Detected Gesture: TYPE_KEY_TAP\n");
+			        		invokeServerMethod(proxy, "GestureManager", "Hibernate", 0, 0);
+				            break;
+				        //Handle screen tap gestures
+				        case Leap::Gesture::TYPE_SCREEN_TAP: 
+							printf("Detected Gesture: TYPE_SCREEN_TAP\n");
+							invokeServerMethod(proxy, "GestureManager", "Hibernate", 0, 0);     
+				            break;
+			            //Handle swipe gestures
+				        case Leap::Gesture::TYPE_SWIPE:
+				        	if(gesture.state() == Leap::Gesture::STATE_UPDATE) {
+				        		printf("Detected Gesture: TYPE_SWIPE\n");
+				        		invokeServerMethod(proxy, "GestureManager", "PowerOff", 0, 0);
+				        	}  
+				            break;
+				        //Handle unrecognized gestures
+				        default:
+				            break;
+					}
+    			}
+    		}
+
+		}
+
+		pthread_mutex_lock(&mutex);
+        gestureDetected = false;
+        pthread_mutex_unlock(&mutex);
+
+		if (deadline_miss(tp)) {
+			printf("leftHandThread: %d\n",tp->dmiss);
+		}
+		wait_for_period(tp);
+	}
+
 }
 
 bool leap_dbus_main_loop() {
 
-	pthread_t rHandT;
-	pthread_t lHandT;
+	//pthread_t rHandT;
+	//pthread_t lHandT;
 
-	TaskPar rHandPar;
-	TaskPar lHandPar;
+	pthread_t mouseT;
+	pthread_t gestureT;
+
+	//TaskPar rHandPar;
+	//TaskPar lHandPar;
+
+	TaskPar mousePar;
+	TaskPar gesturePar;
 
 	/* Set tasks parameters as period, deadline, priority */
-	set_taskpar(&rHandPar, NULL, NULL, 30, 30, 30);
-	set_taskpar(&lHandPar, NULL, NULL, 30, 30, 30);
+	//set_taskpar(&rHandPar, NULL, NULL, 30, 30, 30);
+	//set_taskpar(&lHandPar, NULL, NULL, 30, 30, 30);
+
+	set_taskpar(&mousePar, NULL, NULL, 30, 30, 30);
+	set_taskpar(&gesturePar, NULL, NULL, 30, 30, 30);
 
 	/* Create threads */
-	pthread_create(&lHandT, NULL, leftHandThread, &lHandPar);
-	pthread_create(&rHandT, NULL, rightHandThread, &rHandPar);
+	//pthread_create(&lHandT, NULL, leftHandThread, &lHandPar);
+	//pthread_create(&rHandT, NULL, rightHandThread, &rHandPar);
+
+	pthread_create(&mouseT, NULL, mouseThread, &mousePar);
+	pthread_create(&gestureT, NULL, gestureThread, &gesturePar);
 	
 	/* Wait for threads */
-	pthread_join(lHandT,NULL);
-	pthread_join(rHandT,NULL);
+	//pthread_join(lHandT,NULL);
+	//pthread_join(rHandT,NULL);
+
+	pthread_join(mouseT,NULL);
+	pthread_join(gestureT,NULL);
 
 	return false;
 }

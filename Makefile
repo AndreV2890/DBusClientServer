@@ -12,11 +12,12 @@ LEAP_LIBRARY := leap/lib/x64/libLeap.so -Wl,-rpath,leap/lib/x64
 REALT_NAME := realt
 REALT_LIBRARY := realt/lib/lib$(REALT_NAME).so -Wl,-rpath,realt/lib
 
+LIBREALT := realt/lib/lib$(REALT_NAME).so
+
 # build all process
 all: d_server d_client
 
 # build shared realt library in the lib folder
-librealt: realt/lib/lib$(REALT_NAME).so
 
 realt/lib/lib$(REALT_NAME).so: $(wildcard realt/src/*.c)
 	mkdir -p $(@D)
@@ -27,7 +28,7 @@ d_server: server.c
 	gcc $< -o $@ $(CFLAGS) $(CFLAGS_GIO) $(CFLAGS_X11)
 
 # build dbus-client
-d_client: client.c librealt
+d_client: client.c $(LIBREALT)
 	$(CC) $< -o $@ $(CFLAGS) $(CFLAGS_GIO) -Ileap/include $(LEAP_LIBRARY) -Irealt/include $(REALT_LIBRARY)
 
 # clean project folder
@@ -36,4 +37,4 @@ clean:
 	rm -f d_client
 	rm -f -r realt/lib
 
-.PHONY: all clean d_client d_server librealt
+.PHONY: all clean librealt
