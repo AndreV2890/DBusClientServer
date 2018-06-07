@@ -10,6 +10,7 @@
 /* X11 headers*/
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/extensions/XTest.h>
 
 #define SERVER_VERSION "1.0"
 #define LEAP_X_ABS_MAX 250
@@ -69,40 +70,13 @@ void getMouseCoordinates(Display *display, gint16 *x, gint16 *y) {
 
 /* Simulate mouse click */
 void clickMouse (Display *display, gint16 button) {
-	// Create and setting up the event
-	XEvent event;
-	memset (&event, 0, sizeof (event));
-	event.xbutton.button = button;
-	event.xbutton.same_screen = True;
-	event.xbutton.subwindow = DefaultRootWindow (display);
-	while (event.xbutton.subwindow) {
-		event.xbutton.window = event.xbutton.subwindow;
-		XQueryPointer (display, event.xbutton.window,
-		&event.xbutton.root, &event.xbutton.subwindow,
-		&event.xbutton.x_root, &event.xbutton.y_root,
-		&event.xbutton.x, &event.xbutton.y,
-		&event.xbutton.state);
-	}
-
-	// Press
-	event.type = ButtonPress;
-	if (XSendEvent (display, PointerWindow, True, ButtonPressMask, &event) == 0)
-		fprintf (stderr, "Error to send the event!\n");
-	XFlush (display);
-	usleep (1);
-
-	// Release
-	event.type = ButtonRelease;
-	if (XSendEvent (display, PointerWindow, True, ButtonReleaseMask, &event) == 0)
-		fprintf (stderr, "Error to send the event!\n");
-	XFlush (display);
-	usleep (1);
+	
+	XTestFakeButtonEvent (display, button, True,  CurrentTime);
+    XTestFakeButtonEvent (display, button, False, CurrentTime);
 }
 
 /* Move mouse pointer to x and y coordinate */
 void moveMouse (Display *display, gint16 x, gint16 y) {
-
-	printf("Received x: %d y: %d\n\n", x ,y);
 
 	gint16 xScale = monitorWidth/(2*LEAP_X_ABS_MAX);
 	gint16 yScale = monitorHeigth/(2*LEAP_Y_ABS_MAX);
@@ -390,9 +364,6 @@ int main(void) {
 	printf("Monitor Pixels: %dx%d\n", screen->width, screen->height);
 	monitorWidth = screen->width;
 	monitorHeigth = screen->height;
-
-	/* Move mouse pointer in the monitor center */
-	moveMouse(display, screen->width/2, screen->height/2);
 
 	/* Instanciate bus on DBUS */
 	guint busId;
